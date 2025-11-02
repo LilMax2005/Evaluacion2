@@ -1,0 +1,44 @@
+name: CD
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy-simulated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Pull latest image
+        run: docker pull ghcr.io/${{ github.repository }}:latest
+
+      - name: Create docker-compose.yml (fallback)
+        run: |
+          if [ ! -f docker-compose.yml ]; then
+            cat > docker-compose.yml <<'YAML'
+            services:
+              app:
+                image: ghcr.io/${{ github.repository }}:latest
+                ports: ["8080:8080"]
+            YAML
+          fi
+
+      - name: Start stack
+        run: |
+          docker compose up -d
+          sleep 10
+          docker ps
+
+      - name: Smoke test
+        run: |
+          # Si tienes /api/hello o /actuator/health:
+          # curl -f http://localhost:8080/api/hello || (docker logs $(docker ps -q --filter "name=app"); exit 1)
+          docker logs $(docker ps -q --filter "name=app") --tail=80
